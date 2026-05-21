@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>そっくりさんマンション</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kosugi+Maru&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Kosugi Maru', sans-serif; user-select: none; overflow: hidden; background-color: #f0fdf4; transition: background 1s ease; }
+        
+        /* 昼夜・天気・季節イベント */
+        .time-day { background: linear-gradient(to bottom, #4facfe, #00f2fe); }
+        .time-evening { background: linear-gradient(to bottom, #fa709a, #fee140); }
+        .time-night { background: linear-gradient(to bottom, #141e30, #243b55); color: #fff; }
+        
+        .weather-rain::before { content: ""; position: absolute; inset: 0; background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="20" viewBox="0 0 10 20"><line x1="5" y1="0" x2="0" y2="20" stroke="rgba(255,255,255,0.4)" stroke-width="1"/></svg>') repeat; animation: rain 0.5s linear infinite; pointer-events: none; z-index: 5; }
+        @keyframes rain { from { background-position: 0 0; } to { background-position: -20px 40px; } }
+        
+        .weather-snow::before { content: ""; position: absolute; inset: 0; background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="1.5" fill="rgba(255,255,255,0.8)"/></svg>') repeat; animation: snow 2s linear infinite; pointer-events: none; z-index: 5; }
+        @keyframes snow { from { background-position: 0 0; } to { background-position: 20px 40px; } }
+
+        /* 花火エフェクト */
+        .event-fireworks::after { content: "🎆 🎇 🎆"; position: absolute; top: 10%; left: 0; right: 0; font-size: 5rem; text-align: center; animation: pop 2s infinite; pointer-events: none; z-index: 5; opacity: 0.8; }
+        @keyframes pop { 0% { transform: scale(0.5); opacity: 0; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }
+
+        /* 流れ星 (元ゴミ拾いの代わりの要素35) */
+        .shooting-star { position: absolute; font-size: 3rem; animation: shoot 2s linear forwards; cursor: pointer; z-index: 50; }
+        @keyframes shoot { 0% { transform: translate(50vw, -10vh) rotate(-45deg); opacity: 1; } 100% { transform: translate(-30vw, 80vh) rotate(-45deg); opacity: 0; } }
+
+        /* 各種アニメーション */
+        .ticker-wrap { width: 100%; overflow: hidden; background-color: rgba(0,0,0,0.8); color: white; white-space: nowrap; display: flex; align-items: center;}
+        .ticker { display: inline-block; animation: ticker 25s linear infinite; padding-left: 100%; }
+        @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+        .char-bounce { animation: bounce 2s infinite; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .char-sleep { animation: breathe 3s infinite; filter: grayscale(50%) brightness(80%); }
+        @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        .char-sick { animation: shiver 0.5s infinite; filter: hue-rotate(90deg) opacity(80%); }
+        @keyframes shiver { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+        
+        ::-webkit-scrollbar { display: none; }
+        .meter-bg { background-color: #e5e7eb; border-radius: 999px; height: 10px; width: 100%; overflow: hidden; }
+        .meter-fill-food { background-color: #f59e0b; height: 100%; transition: width 0.5s; }
+        .meter-fill-happy { background-color: #ec4899; height: 100%; transition: width 0.5s; }
+        .view-hidden { display: none !important; }
+        
+        .accessory { position: absolute; top: -15%; left: 50%; transform: translateX(-50%); font-size: 0.6em; z-index: 10;}
+        .pet-icon { position: absolute; bottom: 0; left: -20px; font-size: 0.5em; animation: bounce 1.5s infinite; }
+        .tv-icon { position: absolute; bottom: -10px; right: 20px; font-size: 0.7em; }
+    </style>
+</head>
+<body class="h-screen flex flex-col relative time-day" id="body-bg">
+
+    <!-- ロード画面 (要素40) -->
+    <div id="loading" class="fixed inset-0 bg-indigo-900 text-white z-[100] flex flex-col justify-center items-center font-bold">
+        <div class="text-6xl animate-bounce mb-4">🏢</div>
+        <div class="text-xl">セーブデータを読み込み中...</div>
+    </div>
+
+    <!-- ナビゲーションバー -->
+    <div class="p-2 bg-white/50 backdrop-blur-md shadow-sm z-20 text-black border-b border-white/50 flex flex-col gap-2">
+        <div class="flex justify-between items-center px-1">
+            <!-- マンション名変更 (要素33) -->
+            <h1 class="text-base md:text-xl font-bold drop-shadow-sm cursor-pointer hover:text-blue-600 transition" onclick="renameMansion()" title="名前を変更">
+                <span id="ui-mansion-name">マンション神</span> <span id="mansion-rank" class="text-yellow-500 text-xs">★1</span>
+            </h1>
+            <div class="flex gap-1 overflow-x-auto pb-1 items-center hide-scroll">
+                <button onclick="switchView('map')" class="bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] md:text-xs px-2 py-1.5 rounded font-bold shadow whitespace-nowrap">🕸️ 相関</button>
+                <button onclick="switchView('park')" class="bg-green-500 hover:bg-green-600 text-white text-[10px] md:text-xs px-2 py-1.5 rounded font-bold shadow whitespace-nowrap">⛲ 公園</button>
+                <button onclick="switchView('shop')" class="bg-blue-500 hover:bg-blue-600 text-white text-[10px] md:text-xs px-2 py-1.5 rounded font-bold shadow whitespace-nowrap">🛒 お店</button>
+                <button onclick="switchView('album')" class="bg-yellow-500 hover:bg-yellow-600 text-white text-[10px] md:text-xs px-2 py-1.5 rounded font-bold shadow whitespace-nowrap">📖 記録</button>
+                <button onclick="switchView('collection')" class="bg-pink-500 hover:bg-pink-600 text-white text-[10px] md:text-xs px-2 py-1.5 rounded font-bold shadow whitespace-nowrap">🖼️ 図鑑</button>
+                <!-- 手動セーブ (要素31) -->
+                <button onclick="saveData(true)" class="bg-gray-800 hover:bg-gray-900 text-white text-[10px] md:text-xs px-2 py-1.5 rounded font-bold shadow whitespace-nowrap" title="セーブする">💾</button>
+                <div class="font-bold bg-white/90 px-2 py-1 rounded shadow-inner min-w-[70px] text-center text-xs md:text-sm">
+                    <span id="ui-money" class="text-yellow-600">0 G</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-2 bg-black/80 rounded-full pl-2 pr-1 py-1 w-full text-xs md:text-sm shadow-inner">
+            <div id="news-caster" class="text-xl bg-white rounded-full w-8 h-8 flex items-center justify-center shrink-0 border-2 border-gray-400">📺</div>
+            <div class="ticker-wrap flex-1 rounded-r-full text-white">
+                <div class="ticker" id="news-ticker">【ニュース】自動セーブ機能が有効になりました！</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 1. マンション画面 -->
+    <div id="view-mansion" class="flex-1 overflow-y-auto p-4 pb-24 relative z-10">
+        <div class="max-w-4xl mx-auto flex justify-between items-end mb-4">
+            <div class="bg-white/90 text-black px-4 py-2 rounded-xl shadow font-bold text-xs md:text-sm flex gap-2 items-center">
+                <span id="ui-weather" class="text-lg">☀️</span>
+                <span id="ui-time">春 (Day 1) 12:00</span>
+            </div>
+            <button onclick="expandMansion()" id="btn-expand" class="text-xs bg-yellow-400 text-yellow-900 px-3 py-2 rounded-xl font-bold shadow hover:bg-yellow-500">🏢 増築 (1500G)</button>
+        </div>
+        <div id="mansion-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5 max-w-4xl mx-auto pb-10"></div>
+    </div>
+
+    <!-- 2. キャラメイク -->
+    <div id="view-create" class="view-hidden flex-1 overflow-y-auto p-4 flex justify-center items-center backdrop-blur-md z-30 fixed inset-0">
+        <div class="bg-white text-black p-5 rounded-3xl shadow-2xl max-w-sm w-full h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-bold mb-4 text-center border-b-2 pb-2">✏️ 新規入居者を作成</h2>
+            <input type="hidden" id="create-room-id">
+            
+            <div class="mb-3">
+                <div class="grid grid-cols-6 gap-1 text-2xl mb-1 bg-gray-50 p-2 rounded-lg" id="create-face-list"></div>
+                <input type="text" id="create-face" class="w-full text-center text-4xl border-2 border-gray-200 rounded-xl py-2 bg-gray-100" readonly>
+            </div>
+            <div class="mb-3">
+                <label class="block text-xs font-bold text-gray-700 mb-1">名前</label>
+                <input type="text" id="create-name" placeholder="なまえ" class="w-full border-2 border-gray-200 rounded-lg p-2 font-bold text-sm">
+            </div>
+            <div class="grid grid-cols-3 gap-2 mb-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">年齢</label>
+                    <input type="number" id="create-age" value="20" min="1" max="99" class="w-full border-2 border-gray-200 rounded-lg p-1 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">血液型</label>
+                    <select id="create-blood" class="w-full border-2 border-gray-200 rounded-lg p-1 text-sm"><option value="A">A</option><option value="B">B</option><option value="O">O</option><option value="AB">AB</option></select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">誕生日</label>
+                    <select id="create-birth" class="w-full border-2 border-gray-200 rounded-lg p-1 text-sm"><option value="春">春</option><option value="夏">夏</option><option value="秋">秋</option><option value="冬">冬</option></select>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">性格</label>
+                    <select id="create-personality" class="w-full border-2 border-gray-200 rounded-lg p-2 text-sm">
+                        <option value="normal">ふつう</option><option value="energetic">熱血</option><option value="cool">クール</option><option value="laidback">のんびり</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">テーマ色</label>
+                    <select id="create-color" class="w-full border-2 border-gray-200 rounded-lg p-2 text-sm">
+                        <option value="bg-red-50 border-red-300">赤</option><option value="bg-blue-50 border-blue-300">青</option><option value="bg-green-50 border-green-300">緑</option><option value="bg-yellow-50 border-yellow-300">黄</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="block text-xs font-bold text-gray-700 mb-1">挨拶 / 座右の銘</label>
+                <input type="text" id="create-phrase" placeholder="よろしく！" class="w-full border-2 border-gray-200 rounded-lg p-2 text-sm mb-1">
+                <input type="text" id="create-motto" placeholder="棚からぼたもち" class="w-full border-2 border-gray-200 rounded-lg p-2 text-sm">
+            </div>
+
+            <div class="flex gap-2">
+                <button onclick="switchView('mansion')" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-xl">やめる</button>
+                <button onclick="finishCreate()" class="flex-[2] bg-green-500 hover:bg-green-600 text-white font-bold py-2 rounded-xl shadow">入居決定！</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. お世話画面 (部屋) -->
+    <div id="view-room" class="view-hidden flex-1 overflow-y-auto p-4 flex flex-col items-center relative z-10"></div>
+
+    <!-- 4. 相関図 -->
+    <div id="view-map" class="view-hidden flex-1 overflow-hidden p-2 flex flex-col z-10 relative">
+        <div class="bg-white/90 p-3 rounded-2xl shadow mb-2 text-center text-black z-10 flex justify-between items-center">
+            <h2 class="font-bold text-lg">🕸️ 相関図</h2>
+            <div class="text-[10px] text-left leading-tight"><span class="text-blue-500 font-bold">─ 友達</span><br><span class="text-pink-500 font-bold">━ 恋人</span><br><span class="text-red-600 font-bold text-lg">━ 結婚</span></div>
+        </div>
+        <div class="flex-1 relative bg-white/50 backdrop-blur-sm rounded-3xl border-4 border-gray-300 overflow-hidden shadow-inner" id="map-container">
+            <svg id="map-svg" class="absolute inset-0 w-full h-full pointer-events-none"></svg>
+            <div id="map-nodes" class="absolute inset-0 w-full h-full"></div>
+        </div>
+    </div>
+
+    <!-- 5. 公園 -->
+    <div id="view-park" class="view-hidden flex-1 overflow-hidden p-4 relative z-10 bg-green-100">
+        <div class="absolute inset-0 bg-[url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"><path d=\"M20,80 Q50,20 80,80\" fill=\"%2386efac\"/><rect y=\"80\" width=\"100\" height=\"20\" fill=\"%234ade80\"/></svg>')] bg-cover bg-bottom opacity-50 pointer-events-none"></div>
+        <div class="relative z-10 bg-white/80 p-3 rounded-2xl shadow mb-4 text-black text-center max-w-md mx-auto">
+            <h2 class="font-bold text-lg">⛲ おしゃべり公園</h2>
+        </div>
+        <div id="park-area" class="relative w-full h-2/3 max-w-2xl mx-auto flex items-end justify-center gap-2 md:gap-8 pb-10"></div>
+        <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2">
+            <button onclick="renderPark()" class="bg-blue-500 text-white px-4 py-2 rounded-full shadow font-bold text-sm">様子を見直す</button>
+            <button onclick="searchTreasure()" class="bg-yellow-500 text-white px-4 py-2 rounded-full shadow font-bold text-sm">👑 宝探し</button>
+        </div>
+    </div>
+
+    <!-- 6. ショップ -->
+    <div id="view-shop" class="view-hidden flex-1 overflow-y-auto p-4 z-10 relative">
+        <div class="max-w-2xl mx-auto bg-white/95 text-black p-4 rounded-3xl shadow-lg">
+            <h2 class="text-xl font-bold mb-4 border-b-2 pb-2 text-center">🛒 ショップ＆サービス</h2>
+            <div class="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4" id="shop-foods"></div>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4" id="shop-items"></div>
+            <div class="grid grid-cols-3 md:grid-cols-5 gap-2" id="shop-acc"></div>
+        </div>
+    </div>
+
+    <!-- 7. アルバム -->
+    <div id="view-album" class="view-hidden flex-1 overflow-y-auto p-4 z-10 relative">
+        <div class="max-w-2xl mx-auto bg-white/95 text-black p-4 rounded-3xl shadow-lg min-h-[50vh]">
+            <h2 class="text-xl font-bold mb-4 border-b-2 pb-2 text-center">📖 思い出アルバム</h2>
+            <div id="album-content" class="space-y-3 flex flex-col-reverse"></div>
+        </div>
+    </div>
+    
+    <!-- 36. コレクションルーム -->
+    <div id="view-collection" class="view-hidden flex-1 overflow-y-auto p-4 z-10 relative">
+        <div class="max-w-2xl mx-auto bg-white/95 text-black p-4 rounded-3xl shadow-lg min-h-[50vh]">
+            <h2 class="text-xl font-bold mb-4 border-b-2 pb-2 text-center">🖼️ アイテム図鑑</h2>
+            <p class="text-center text-sm text-gray-500 mb-4">今まで住人にあげたものリスト</p>
+            <div id="collection-grid" class="grid grid-cols-4 md:grid-cols-6 gap-2"></div>
+        </div>
+    </div>
+
+    <!-- 25. 占い館 -->
+    <div id="view-fortune" class="view-hidden flex-1 overflow-y-auto p-4 z-10 relative flex justify-center items-center">
+        <div class="max-w-sm mx-auto bg-purple-900 text-white p-6 rounded-3xl shadow-2xl border-4 border-purple-500 w-full text-center">
+            <div class="text-6xl mb-4 animate-pulse">🔮</div>
+            <h2 class="text-2xl font-bold mb-2">神秘の占い館</h2>
+            <div id="fortune-result" class="bg-purple-800 p-4 rounded-xl text-lg font-bold min-h-[5rem] flex items-center justify-center border border-purple-400">
+                （水晶玉を覗き込んでいます...）
+            </div>
+            <button onclick="drawFortune()" class="mt-6 w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 rounded-xl shadow">占う (無料)</button>
+        </div>
+    </div>
+
+    <!-- 共通アラート -->
+    <div id="modal-alert" class="hidden fixed inset-0 bg-black/60 flex justify-center items-center z-[60] backdrop-blur-sm">
+        <div class="bg-white text-black p-6 rounded-3xl shadow-2xl max-w-xs w-full text-center mx-4 animate-bounce-short">
+            <div id="alert-icon" class="text-6xl mb-2 drop-shadow-md">✨</div>
+            <h3 id="alert-title" class="text-xl font-bold mb-2"></h3>
+            <p id="alert-msg" class="text-sm mb-6 whitespace-pre-line"></p>
+            <div id="alert-actions" class="flex flex-col gap-2"></div>
+        </div>
+    </div>
+
+    <!-- 質問モーダル -->
+    <div id="modal-question" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-[60]">
+        <div class="bg-white text-black p-6 rounded-3xl max-w-xs w-full text-center mx-4">
+            <h3 class="text-lg font-bold mb-4" id="q-text">犬派？猫派？</h3>
+            <div class="flex gap-2">
+                <button onclick="ansQuestion('A')" id="q-btn-a" class="flex-1 bg-blue-500 text-white py-3 rounded-xl font-bold">犬</button>
+                <button onclick="ansQuestion('B')" id="q-btn-b" class="flex-1 bg-pink-500 text-white py-3 rounded-xl font-bold">猫</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 名前変更モーダル (追加) -->
+    <div id="modal-rename" class="hidden fixed inset-0 bg-black/60 flex justify-center items-center z-[60] backdrop-blur-sm">
+        <div class="bg-white text-black p-6 rounded-3xl shadow-2xl max-w-xs w-full text-center mx-4">
+            <h3 class="text-xl font-bold mb-4">マンション名変更</h3>
+            <input type="text" id="input-mansion-name" class="w-full border-2 border-gray-200 rounded-lg p-2 font-bold text-sm mb-4" placeholder="新しいマンション名">
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('modal-rename').classList.add('hidden')" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 rounded-xl">キャンセル</button>
+                <button onclick="confirmRename()" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-xl shadow">変更</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 設定・データ ---
+        const SAVE_KEY = 'mansion_super_god_save';
+        const EMOJIS = ['👨', '👩', '👱‍♂️', '👱‍♀️', '👴', '👵', '👲', '👳‍♀️', '👮‍♂️', '🕵️‍♀️', '👨‍🍳', '👩‍🎤', '🦸‍♂️', '🧛‍♀️', '🐱', '🐶', '👽', '🤖', '👻', '🤡', '👶', '👦', '👧'];
+        const FOODS = [
+            { id: 'f1', name: 'おにぎり', icon: '🍙', price: 10, fill: 30, happy: 5 },
+            { id: 'f2', name: 'バーガー', icon: '🍔', price: 30, fill: 60, happy: 10 },
+            { id: 'f3', name: 'ステーキ', icon: '🥩', price: 100, fill: 100, happy: 30 },
+            { id: 'f4', name: 'ケーキ', icon: '🍰', price: 50, fill: 20, happy: 40 },
+            { id: 'f5', name: '青汁', icon: '🍵', price: 10, fill: 10, happy: -10, heal: true }
+        ];
+        const ITEMS = [
+            { id: 'i1', type: 'cure', name: '特効カゼ薬', icon: '💉', price: 50 },
+            { id: 'i2', type: 'travel', name: '旅行券', icon: '🎫', price: 300 },
+            { id: 'i3', type: 'gift', name: 'ギター', icon: '🎸', price: 150 },
+            { id: 'i4', type: 'ring', name: '結婚指輪', icon: '💍', price: 1000 },
+            { id: 'i5', type: 'interior', name: '宇宙の壁紙', icon: '🌌', price: 400 },
+            { id: 'i6', type: 'pet', name: '犬', icon: '🐶', price: 500 },
+            { id: 'i7', type: 'pet', name: '猫', icon: '🐱', price: 500 },
+            { id: 'i8', type: 'tv', name: 'テレビ', icon: '📺', price: 600 }
+        ];
+        const ACCS = [
+            { id: 'a1', name: '帽子', icon: '🎩' }, { id: 'a2', name: 'リボン', icon: '🎀' },
+            { id: 'a3', name: 'メガネ', icon: '👓' }, { id: 'a4', name: '王冠', icon: '👑' }, { id: 'a5', name: '天使の輪', icon: '👼' }
+        ];
+        const SEASONS = ['春', '夏', '秋', '冬'];
+        const QUESTIONS = [
+            {q: "目玉焼きには？", a:"醤油", b:"ソース"}, {q: "犬派？猫派？", a:"犬🐶", b:"猫🐱"}, {q: "タイムマシンで行くなら？", a:"過去", b:"未来"}
+        ];
+
+        // --- ゲームステート ---
+        window.state = {
+            mansionName: "マンション神",
+            money: 1000, hour: 12, day: 1, seasonIdx: 0, weather: 'sunny',
+            maxRooms: 8, mansionLevel: 1, residents: [], currentRoomId: null,
+            view: 'mansion', newsQueue: [], album: [], casterId: null, collections: []
+        };
+
+        // --- 起動とセーブ・ロード (要素31, 32) ---
+        window.onload = () => {
+            loadData();
+        };
+
+        function loadData() {
+            try {
+                const saved = localStorage.getItem(SAVE_KEY);
+                if (saved) {
+                    window.state = { ...window.state, ...JSON.parse(saved) };
+                    window.state.money += 300; // 要素32: ログインボーナス
+                    showAlert("ロード完了！", "続きから始めます！\n【ログインボーナス】 +300G", "💾");
+                } else {
+                    showAlert("ようこそ！", "新しいマンションの経営を始めましょう！", "🏢");
+                }
+            } catch(e) { console.error("Load Error:", e); }
+            
+            document.getElementById('loading').classList.add('hidden');
+            initCreateForm(); initShop(); renderMansion(); updateGlobalUI();
+            addNews("自動セーブ機能が有効です。");
+            setInterval(gameTick, 1000); // 1秒 = 10分
+        }
+
+        window.saveData = function(manual = false) {
+            try {
+                localStorage.setItem(SAVE_KEY, JSON.stringify(window.state));
+                if(manual) showAlert("セーブ完了", "現在の状態を保存しました！", "💾");
+            } catch(e) { console.error("Save Error:", e); }
+        }
+
+        // --- マンション名変更 (要素33修正) ---
+        window.renameMansion = function() {
+            document.getElementById('input-mansion-name').value = window.state.mansionName;
+            document.getElementById('modal-rename').classList.remove('hidden');
+        }
+        window.confirmRename = function() {
+            let n = document.getElementById('input-mansion-name').value;
+            if(n && n.trim() !== "") {
+                window.state.mansionName = n.trim();
+                updateGlobalUI();
+                window.saveData();
+                document.getElementById('modal-rename').classList.add('hidden');
+            }
+        }
+
+        // --- 流れ星システム (要素35変更) ---
+        window.spawnShootingStar = function() {
+            const star = document.createElement('div');
+            star.className = 'shooting-star drop-shadow-lg';
+            star.innerHTML = '🌠';
+            star.style.top = Math.random() * 30 + '%';
+            star.onclick = function() {
+                star.remove();
+                window.state.money += 50;
+                updateGlobalUI();
+                window.showAlert("願いが叶った！", "流れ星にお願いして 50G を手に入れた！", "🌠");
+            };
+            document.body.appendChild(star);
+            setTimeout(() => { if(star.parentElement) star.remove(); }, 2000);
+        }
+
+        // --- メインループ ---
+        function gameTick() {
+            window.state.hour += 1/6;
+            if (window.state.hour >= 24) { 
+                window.state.hour = 0; window.state.day++; 
+                if(window.state.day % 7 === 0) window.state.seasonIdx = (window.state.seasonIdx + 1) % 4;
+                changeWeather();
+                dailyEvents();
+                window.saveData(); // 毎朝オートセーブ
+            }
+            updateGlobalUI();
+
+            // 夜に確率で流れ星
+            if(window.state.view === 'mansion' && (window.state.hour >= 18 || window.state.hour < 5) && Math.random() < 0.05) {
+                spawnShootingStar();
+            }
+
+            window.state.residents.forEach(r => {
+                if (r.state === 'traveling' || r.state === 'working') return;
+                if (r.fullness > 0) r.fullness -= 0.15;
+                r.isSleeping = (window.state.hour >= 23 || window.state.hour < 6);
+
+                if(Math.random() < 0.005 && r.state === 'normal' && !r.isSleeping) {
+                    const rnd = Math.random();
+                    if(rnd < 0.2) r.state = 'sick';
+                    else if(rnd < 0.4) r.state = 'trouble';
+                    else if(rnd < 0.5) r.state = 'working'; 
+                    else if(rnd < 0.6) r.state = 'question'; 
+                }
+            });
+
+            if(Math.random() < 0.1 && window.state.residents.length >= 2) {
+                const r1 = window.state.residents[Math.floor(Math.random()*window.state.residents.length)];
+                const r2 = window.state.residents[Math.floor(Math.random()*window.state.residents.length)];
+                if(r1.id !== r2.id && r1.state === 'normal' && r2.state === 'normal') {
+                    if(r1.isMarried && r1.lover === r2.id && window.state.residents.length < window.state.maxRooms && Math.random() < 0.05) {
+                        makeBaby(r1, r2);
+                    } else if(Math.random() < 0.3 && !r1.friends.includes(r2.id)) {
+                        r1.friends.push(r2.id); r2.friends.push(r1.id);
+                        addNews(`🌟 ${r1.name} と ${r2.name} が友達に！`);
+                        addToAlbum(`友達記念`, `${r1.name}と${r2.name}が友達になった！`, r1.face+r2.face);
+                    } else if(r1.friends.includes(r2.id) && !r1.lover && !r2.lover && Math.random() < 0.1) {
+                        r1.lover = r2.id; r2.lover = r1.id;
+                        addNews(`💖 ${r1.name} と ${r2.name} が恋人に！`);
+                        addToAlbum(`カップル誕生`, `${r1.name}と${r2.name}が付き合い始めた！`, r1.face+'❤️'+r2.face);
+                    }
+                }
+            }
+
+            window.state.residents.forEach(r => {
+                if((r.state === 'traveling' || r.state === 'working') && window.state.hour >= r.returnTime) {
+                    if(r.state === 'working') {
+                        let wage = r.level * 30; window.state.money += wage;
+                        showAlert("お仕事完了！", `${r.name} がバイトから帰り、給料 ${wage}G を家計に入れてくれました！`, "💼");
+                    } else {
+                        showAlert("旅行から帰還！", `${r.name} が旅行から帰ってきました！大満足です。`, "🛬");
+                        addToAlbum('旅行', `${r.name} が旅行を満喫した。`, r.face+'✈️');
+                    }
+                    r.state = 'normal'; r.happiness = 100; checkLevelUp(r);
+                    if(window.state.view === 'room' && window.state.currentRoomId === r.id) renderRoom();
+                    else if(window.state.view === 'mansion') renderMansion();
+                }
+            });
+
+            if(window.state.view === 'mansion') renderMansion();
+            if(window.state.view === 'room') updateMetersOnly();
+        }
+
+        function changeWeather() {
+            const rnd = Math.random();
+            if(rnd < 0.6) window.state.weather = 'sunny';
+            else if(rnd < 0.9) window.state.weather = 'rain';
+            else window.state.weather = 'snow';
+        }
+
+        function dailyEvents() {
+            let total = 0;
+            window.state.residents.forEach(r => {
+                total += (r.level * 20);
+                if(r.birthSeason === SEASONS[window.state.seasonIdx]) {
+                    window.state.money += 100; r.happiness = 100; checkLevelUp(r);
+                    showAlert("Happy Birthday!", `今日は ${r.name} の誕生季節(${r.birthSeason})です！\nお祝い金100Gと、ご機嫌MAX！`, "🎂");
+                    addToAlbum('誕生日', `${r.name} の誕生日を祝った。`, '🎂');
+                }
+            });
+            if(total > 0) { window.state.money += total; addNews(`💰 朝です！家賃収入 ${total}G が入りました！`); }
+            if(window.state.residents.length > 0) window.state.casterId = window.state.residents[Math.floor(Math.random()*window.state.residents.length)].id;
+        }
+
+        function makeBaby(p1, p2) {
+            let emptyRoomId = -1;
+            for(let i=0; i<window.state.maxRooms; i++) { if(!window.state.residents.find(x=>x.roomId===i)){ emptyRoomId=i; break; } }
+            if(emptyRoomId === -1) return;
+
+            const babyFace = ['👶', '👦', '👧'][Math.floor(Math.random()*3)];
+            const baby = {
+                id: Date.now().toString(), roomId: emptyRoomId, face: babyFace, name: p1.name+"の子供", age: 0,
+                blood: p1.blood, birthSeason: SEASONS[window.state.seasonIdx], phrase: "ばぶー！", motto: "泣くのが仕事",
+                personality: 'normal', color: 'bg-yellow-50 border-yellow-300', interior: null, acc: null, pet: null, tv: false,
+                fullness: 100, happiness: 100, level: 1, state: 'normal', isSleeping: false, friends: [p1.id, p2.id],
+                lover: null, isMarried: false, items: [], favFood: FOODS[0].id, disFood: FOODS[4].id, returnTime: 0
+            };
+            window.state.residents.push(baby);
+            p1.friends.push(baby.id); p2.friends.push(baby.id);
+            showAlert("コウノトリがやってきた！", `${p1.name} と ${p2.name} の間に\n新しい命が誕生しました！\n（${emptyRoomId+1}号室）`, "🕊️");
+            addToAlbum('誕生', `新しい命が生まれた！`, '👶');
+            renderMansion();
+        }
+
+        window.switchView = function(vName) {
+            ['mansion','create','room','shop','map','park','album','fortune','collection'].forEach(v => document.getElementById(`view-${v}`).classList.add('view-hidden'));
+            document.getElementById(`view-${vName}`).classList.remove('view-hidden');
+            window.state.view = vName;
+            if (vName === 'mansion') renderMansion();
+            if (vName === 'map') renderMap();
+            if (vName === 'park') renderPark();
+            if (vName === 'album') renderAlbum();
+            if (vName === 'collection') renderCollection();
+        }
+
+        function updateGlobalUI() {
+            document.getElementById('ui-money').textContent = `${Math.floor(window.state.money)} G`;
+            document.getElementById('ui-mansion-name').textContent = window.state.mansionName;
+            
+            let h = Math.floor(window.state.hour), m = Math.floor((window.state.hour % 1)*60).toString().padStart(2, '0');
+            let bgClass = h>=6&&h<16 ? 'time-day' : h>=16&&h<20 ? 'time-evening' : 'time-night';
+            let wIcon = window.state.weather === 'sunny' ? '☀️' : window.state.weather === 'rain' ? '☔' : '❄️';
+            
+            document.getElementById('ui-weather').textContent = wIcon;
+            document.getElementById('ui-time').textContent = `${SEASONS[window.state.seasonIdx]} (Day ${window.state.day}) ${h}:${m}`;
+            
+            let bgClasses = `h-screen flex flex-col relative transition-colors duration-1000 ${bgClass}`;
+            if(window.state.weather === 'rain') bgClasses += " weather-rain";
+            if(window.state.weather === 'snow') bgClasses += " weather-snow";
+            
+            // 要素37: 夏の夜はお祭り！
+            if(window.state.seasonIdx === 1 && window.state.day % 7 === 0 && (h >= 19 || h < 4)) {
+                bgClasses += " event-fireworks";
+            }
+            document.getElementById('body-bg').className = bgClasses;
+
+            if(window.state.casterId) {
+                const c = window.state.residents.find(x => x.id === window.state.casterId);
+                if(c) document.getElementById('news-caster').textContent = c.face;
+            }
+        }
+
+        function addNews(t) { window.state.newsQueue.push(t); if(window.state.newsQueue.length > 5) window.state.newsQueue.shift(); document.getElementById('news-ticker').textContent = "【最新】 " + window.state.newsQueue.join(" ｜ "); }
+        function addToAlbum(t, d, i) { window.state.album.unshift({ time: `Day ${window.state.day} ${Math.floor(window.state.hour)}:00`, title: t, desc: d, icon: i }); if(window.state.album.length > 20) window.state.album.pop(); }
+        function trackCollection(id) { if(!window.state.collections.includes(id)) window.state.collections.push(id); }
+
+        window.takePhoto = function() {
+            addToAlbum('手動写真', '思い出をパシャリ！', '📸');
+            showAlert("カシャ！", "アルバムに写真を保存しました！", "📸");
+        }
+
+        window.showAlert = function(title, msg, icon, actions = []) {
+            document.getElementById('alert-title').textContent = title; document.getElementById('alert-msg').textContent = msg; document.getElementById('alert-icon').textContent = icon || "ℹ️";
+            const actContainer = document.getElementById('alert-actions'); actContainer.innerHTML = '';
+            if (actions.length === 0) { actContainer.innerHTML = `<button onclick="closeAlert()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl shadow w-full">OK</button>`; } 
+            else { actions.forEach(act => { const btn = document.createElement('button'); btn.className = `font-bold py-3 rounded-xl shadow w-full ${act.color || 'bg-blue-500 text-white'}`; btn.textContent = act.label; btn.onclick = () => { window.closeAlert(); if(act.onClick) act.onClick(); }; actContainer.appendChild(btn); }); }
+            document.getElementById('modal-alert').classList.remove('hidden');
+        }
+        window.closeAlert = function() { document.getElementById('modal-alert').classList.add('hidden'); }
+
+        window.expandMansion = function() {
+            if(window.state.maxRooms >= 16) return window.showAlert("上限です", "これ以上増築できません。", "🏢");
+            if(window.state.money < 1500) return window.showAlert("お金不足", "増築には1500G必要です。", "💸");
+            window.state.money -= 1500; window.state.maxRooms += 4; window.state.mansionLevel++;
+            document.getElementById('mansion-rank').textContent = `★${window.state.mansionLevel}`;
+            updateGlobalUI(); renderMansion(); addNews("🎊 マンションが増築されました！"); window.showAlert("増築完了！", `部屋数: ${window.state.maxRooms}`, "🏗️");
+        }
+
+        function renderMansion() {
+            const grid = document.getElementById('mansion-grid'); grid.innerHTML = '';
+            document.getElementById('btn-expand').style.display = (window.state.maxRooms < 16) ? 'block' : 'none';
+
+            for(let i=0; i<window.state.maxRooms; i++) {
+                const r = window.state.residents.find(x => x.roomId === i);
+                const div = document.createElement('div');
+                if (r) {
+                    const roomBg = r.interior || r.color;
+                    div.className = `rounded-3xl p-2 flex flex-col items-center justify-between cursor-pointer shadow border-2 h-40 relative ${roomBg} transition transform hover:scale-105`;
+                    let sIcon = "";
+                    if(r.state === 'traveling') sIcon = '<div class="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-bold z-20 rounded-3xl">✈️旅行中</div>';
+                    else if(r.state === 'working') sIcon = '<div class="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-bold z-20 rounded-3xl">💼仕事中</div>';
+                    else if(r.state === 'sick') sIcon = '<div class="absolute -top-2 -right-2 text-3xl animate-bounce z-20">🤒</div>';
+                    else if(r.isSleeping) sIcon = '<div class="absolute -top-2 -right-2 text-3xl animate-pulse z-20">💤</div>';
+                    else if(r.state === 'trouble' || r.state === 'question') sIcon = '<div class="absolute -top-2 -right-2 text-4xl animate-bounce z-20">💭</div>';
+                    
+                    let accHtml = r.acc ? `<div class="accessory">${ACCS.find(a=>a.id===r.acc).icon}</div>` : '';
+                    let petHtml = r.pet ? `<div class="pet-icon">${r.pet}</div>` : '';
+                    let tvHtml = r.tv ? `<div class="tv-icon">📺</div>` : '';
+
+                    div.innerHTML = `${sIcon}<div class="text-[10px] bg-white/80 px-2 rounded-full font-bold w-full text-center truncate mb-1">Lv.${r.level} ${r.name}</div><div class="relative text-5xl drop-shadow ${r.isSleeping?'char-sleep':r.state==='sick'?'char-sick':'char-bounce'}">${accHtml}${petHtml}${tvHtml}${r.face}</div><div class="w-full bg-white/50 p-1 rounded mt-auto"><div class="meter-bg h-2"><div class="meter-fill-food" style="width: ${r.fullness}%"></div></div></div>`;
+                    div.onclick = () => window.openRoom(r.id);
+                } else {
+                    div.className = `bg-black/10 border-2 border-dashed border-gray-400/50 rounded-3xl p-2 flex flex-col items-center justify-center cursor-pointer hover:bg-black/20 h-40`;
+                    div.innerHTML = `<div class="text-3xl mb-2 text-gray-400">➕</div><div class="bg-white/80 text-[10px] font-bold px-2 py-1 rounded-full">入居</div>`;
+                    div.onclick = () => window.openCreateForm(i);
+                }
+                grid.appendChild(div);
+            }
+        }
+
+        function initCreateForm() {
+            const list = document.getElementById('create-face-list');
+            EMOJIS.forEach(e => {
+                const btn = document.createElement('button'); btn.textContent = e; btn.className = "hover:bg-gray-200 rounded p-1";
+                btn.onclick = () => document.getElementById('create-face').value = e; list.appendChild(btn);
+            });
+            document.getElementById('create-face').value = EMOJIS[0];
+        }
+
+        window.openCreateForm = function(roomId) { document.getElementById('create-room-id').value = roomId; document.getElementById('create-name').value = ""; window.switchView('create'); }
+
+        window.finishCreate = function() {
+            const roomId = parseInt(document.getElementById('create-room-id').value);
+            const face = document.getElementById('create-face').value;
+            const name = document.getElementById('create-name').value || "名無し";
+            const newR = {
+                id: Date.now().toString(), roomId, face, name,
+                age: parseInt(document.getElementById('create-age').value) || 20,
+                blood: document.getElementById('create-blood').value,
+                birthSeason: document.getElementById('create-birth').value,
+                personality: document.getElementById('create-personality').value,
+                color: document.getElementById('create-color').value,
+                phrase: document.getElementById('create-phrase').value || "よろしく！",
+                motto: document.getElementById('create-motto').value || "適当に生きる",
+                interior: null, acc: null, pet: null, tv: false,
+                fullness: 50, happiness: 0, level: 1, state: 'normal',
+                isSleeping: false, friends: [], lover: null, isMarried: false, items: [],
+                favFood: FOODS[Math.floor(Math.random()*FOODS.length)].id, disFood: FOODS[Math.floor(Math.random()*FOODS.length)].id, returnTime: 0
+            };
+            if(newR.favFood === newR.disFood) newR.disFood = null;
+            window.state.residents.push(newR); if(!window.state.casterId) window.state.casterId = newR.id;
+            addToAlbum('新入居者', `${name}（${newR.age}歳）が引っ越してきた！`, face);
+            window.showAlert("入居完了！", `${name}さんが${roomId+1}号室に入居しました！`, "🚚"); window.switchView('mansion');
+        }
+
+        window.leaveMansion = function(id) {
+            const r = window.state.residents.find(x => x.id === id);
+            if(confirm(`本当に ${r.name} とお別れしますか？この操作は取り消せません。`)) {
+                window.state.residents = window.state.residents.filter(x => x.id !== id);
+                addToAlbum('お別れ', `${r.name}がマンションを去っていった。`, '👋');
+                window.showAlert("退去完了", `${r.name} がマンションから引っ越しました。`, "👋", [{label:"戻る", onClick:()=>window.switchView('mansion')}]);
+            }
+        }
+
+        window.openRoom = function(id) { window.state.currentRoomId = id; renderRoom(); window.switchView('room'); }
+        function renderRoom() {
+            const r = window.state.residents.find(x => x.id === window.state.currentRoomId); if(!r) return;
+            const roomDiv = document.getElementById('view-room');
+            roomDiv.className = `view-hidden flex-1 overflow-y-auto p-4 flex flex-col items-center justify-between ${r.interior||r.color} transition-colors relative z-10`;
+
+            if (r.state === 'traveling' || r.state === 'working') {
+                let icon = r.state==='traveling'?'✈️':'💼', txt = r.state==='traveling'?'旅行':'仕事';
+                roomDiv.innerHTML = `<div class="w-full flex justify-between mb-4 z-10"><button onclick="switchView('mansion')" class="bg-white px-4 py-2 rounded-full font-bold shadow">&lt; 戻る</button></div><div class="flex-1 flex flex-col justify-center items-center text-center"><div class="text-6xl mb-4 animate-bounce">${icon}</div><h2 class="text-2xl font-bold bg-white/80 p-2 rounded">${r.name} は${txt}中です</h2></div>`; return;
+            }
+
+            let dialogue = `「${r.phrase}」`, actions = "";
+            if (r.isSleeping) {
+                dialogue = "（スヤスヤ…）"; actions = `<button onclick="showAlert('夢', '${r.name}は空を飛ぶ夢を見ているようだ…', '💭')" class="bg-gray-800 text-white font-bold py-3 px-8 rounded-full shadow">夢を覗く</button>`;
+            } else if (r.state === 'sick') {
+                dialogue = "「ゴホッ…熱が…」"; actions = `<button onclick="switchView('shop')" class="bg-red-500 text-white font-bold py-3 px-8 rounded-full shadow animate-pulse">薬を買いに行く</button>`;
+            } else if (r.state === 'trouble') {
+                dialogue = "「悩みがあるんだ…」"; actions = `<button onclick="solveTrouble('${r.id}')" class="bg-yellow-400 text-yellow-900 font-bold py-3 px-8 rounded-full shadow animate-pulse">悩みを聞く</button>`;
+            } else if (r.state === 'question') {
+                dialogue = "「ちょっと聞いていい？」"; actions = `<button onclick="openQuestion('${r.id}')" class="bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow animate-pulse">話を聞く</button>`;
+            } else {
+                if(r.tv && Math.random() < 0.3) dialogue = "（テレビに夢中だ…📺）";
+                actions = `<div class="grid grid-cols-2 gap-2 w-full max-w-sm"><button onclick="switchView('shop')" class="bg-orange-400 text-white font-bold py-3 rounded-xl shadow text-sm">🍔 お店/アイテム</button><button onclick="patHead('${r.id}')" class="bg-pink-400 text-white font-bold py-3 rounded-xl shadow text-sm">✋ なでる</button><button onclick="startQuiz('${r.id}')" class="bg-indigo-400 text-white font-bold py-3 rounded-xl shadow text-sm">❓ クイズ</button><button onclick="leaveMansion('${r.id}')" class="bg-gray-500 text-white font-bold py-3 rounded-xl shadow text-sm">👋 退去させる</button></div>`;
+            }
+
+            let accHtml = r.acc ? `<div class="accessory" style="font-size: 0.8em; top:-20%;">${ACCS.find(a=>a.id===r.acc).icon}</div>` : '';
+            let ringHtml = r.isMarried ? `<div class="absolute bottom-0 right-0 text-3xl">💍</div>` : '';
+            let petHtml = r.pet ? `<div class="pet-icon" style="font-size: 0.7em;">${r.pet}</div>` : '';
+            let tvHtml = r.tv ? `<div class="tv-icon" style="font-size: 1em;">📺</div>` : '';
+
+            roomDiv.innerHTML = `
+                <div class="w-full max-w-md mx-auto flex justify-between items-center mb-4 bg-white/80 p-2 rounded-2xl shadow-sm z-10">
+                    <button onclick="switchView('mansion')" class="bg-white px-3 py-1 rounded-full font-bold text-sm shadow-sm">&lt; 戻る</button>
+                    <div class="text-center font-bold text-sm">${r.name} (${r.age}歳・${r.birthSeason})<div class="text-[10px] font-bold text-gray-600">Lv.${r.level} / ${r.isMarried?'💍既婚':r.lover?'❤️恋人':`友:${r.friends.length}人`}</div></div><div class="w-12"></div>
+                </div>
+                <div class="flex-1 flex flex-col justify-center items-center w-full max-w-md mx-auto z-10">
+                    <div class="bg-white p-3 rounded-2xl shadow-lg relative mb-8 w-4/5 text-center font-bold text-sm before:content-[''] before:absolute before:-bottom-3 before:left-1/2 before:-ml-2 before:border-8 before:border-transparent before:border-t-white">${dialogue}</div>
+                    <div class="relative text-[120px] mb-8 drop-shadow-xl ${r.isSleeping?'char-sleep':r.state==='sick'?'char-sick':'char-bounce'}" onclick="${r.state==='normal'&&!r.isSleeping?'patHead(\''+r.id+'\')':''}">${accHtml}${petHtml}${tvHtml}${r.face}${ringHtml}</div>
+                    <div class="w-full bg-white/90 p-3 rounded-2xl shadow mb-4">
+                        <div class="mb-2 flex justify-between text-xs font-bold"><span class="w-10">おなか</span><div class="meter-bg mx-2 mt-1"><div id="ui-room-food-bar" class="meter-fill-food" style="width:${r.fullness}%"></div></div><span id="ui-room-food" class="w-8 text-right">${Math.floor(r.fullness)}</span></div>
+                        <div class="flex justify-between text-xs font-bold"><span class="w-10">ご機嫌</span><div class="meter-bg mx-2 mt-1"><div id="ui-room-happy-bar" class="meter-fill-happy" style="width:${r.happiness}%"></div></div><span id="ui-room-happy" class="w-8 text-right">${Math.floor(r.happiness)}</span></div>
+                    </div>${actions}
+                </div>`;
+        }
+
+        function updateMetersOnly() {
+            if(window.state.view !== 'room') return;
+            const r = window.state.residents.find(x => x.id === window.state.currentRoomId); if(!r) return;
+            const fSpan = document.getElementById('ui-room-food'), fBar = document.getElementById('ui-room-food-bar');
+            const hSpan = document.getElementById('ui-room-happy'), hBar = document.getElementById('ui-room-happy-bar');
+            if(fSpan && fBar) { fSpan.textContent = Math.floor(r.fullness); fBar.style.width = `${r.fullness}%`; }
+            if(hSpan && hBar) { hSpan.textContent = Math.floor(r.happiness); hBar.style.width = `${r.happiness}%`; }
+        }
+
+        window.patHead = function(id) { const r = window.state.residents.find(x => x.id === id); r.happiness = Math.min(100, r.happiness + 5); checkLevelUp(r); updateMetersOnly(); }
+        window.solveTrouble = function(id) { const r = window.state.residents.find(x => x.id === id); r.state = 'normal'; r.happiness = Math.min(100, r.happiness + 30); checkLevelUp(r); window.showAlert("解決！", "スッキリしたようです。", "✨"); renderRoom(); }
+        function checkLevelUp(r) { if(r.happiness >= 100) { r.level++; r.happiness = 0; window.state.money += r.level*50; window.showAlert("レベルUP！", `${r.name} がLv${r.level}に！\nお礼に ${r.level*50}G を貰いました。`, "🆙"); } }
+
+        window.openQuestion = function(id) {
+            const q = QUESTIONS[Math.floor(Math.random()*QUESTIONS.length)];
+            document.getElementById('q-text').textContent = q.q;
+            document.getElementById('q-btn-a').textContent = q.a;
+            document.getElementById('q-btn-b').textContent = q.b;
+            document.getElementById('modal-question').classList.remove('hidden');
+        }
+        window.ansQuestion = function(ans) {
+            document.getElementById('modal-question').classList.add('hidden');
+            const r = window.state.residents.find(x => x.id === window.state.currentRoomId);
+            r.state = 'normal'; r.happiness = Math.min(100, r.happiness + 20); checkLevelUp(r);
+            window.showAlert("なるほど！", "「教えてくれてありがとう！」\n少し仲良くなりました。", "💬"); renderRoom();
+        }
+
+        function initShop() {
+            const fDiv = document.getElementById('shop-foods'); FOODS.forEach(f => { fDiv.innerHTML += `<div class="bg-orange-50 border border-orange-200 p-2 rounded-xl text-center cursor-pointer" onclick="buyFood('${f.id}')"><div class="text-3xl">${f.icon}</div><div class="font-bold text-[10px]">${f.name}</div><div class="text-orange-600 text-xs">${f.price}G</div></div>`; });
+            const iDiv = document.getElementById('shop-items'); ITEMS.forEach(i => { iDiv.innerHTML += `<div class="bg-blue-50 border border-blue-200 p-2 rounded-xl text-center cursor-pointer" onclick="buyItem('${i.id}')"><div class="text-3xl">${i.icon}</div><div class="font-bold text-[10px] truncate">${i.name}</div><div class="text-blue-600 text-xs">${i.price}G</div></div>`; });
+            const aDiv = document.getElementById('shop-acc'); ACCS.forEach(a => { aDiv.innerHTML += `<div class="bg-pink-50 border border-pink-200 p-2 rounded-xl text-center cursor-pointer" onclick="buyAcc('${a.id}')"><div class="text-2xl">${a.icon}</div><div class="font-bold text-[10px] truncate">${a.name}</div><div class="text-pink-600 text-xs">100G</div></div>`; });
+        }
+        window.buyFood = function(id) {
+            const r = window.state.residents.find(x => x.id === window.state.currentRoomId); if(!r) return window.showAlert("誰に？", "部屋から開いてください", "🤔");
+            const food = FOODS.find(x => x.id === id); if(window.state.money < food.price) return window.showAlert("お金不足", "", "💸"); if(r.fullness >= 100) return window.showAlert("おなかいっぱい", "", "🙅");
+            window.state.money -= food.price; r.fullness = Math.min(100, r.fullness + food.fill); trackCollection(id);
+            let gain = food.happy, msg = `${food.name}を食べた！`, icon = "🍽️";
+            if(r.state === 'sick' && food.heal) { r.state = 'normal'; msg = "風邪が治った！"; icon = "✨"; } else if(id===r.favFood){ gain=100; msg="大好物！大喜び！"; icon="😍"; } else if(id===r.disFood){ gain=-20; msg="苦手みたい…"; icon="🤢"; }
+            r.happiness = Math.max(0, Math.min(100, r.happiness + gain)); checkLevelUp(r); updateGlobalUI(); window.showAlert("食事", msg, icon, [{label:"戻る", onClick:()=>{window.switchView('room');renderRoom();}}]);
+        }
+        window.buyItem = function(id) {
+            const r = window.state.residents.find(x => x.id === window.state.currentRoomId); if(!r) return window.showAlert("誰に？", "部屋から開いてください", "🤔");
+            const item = ITEMS.find(x => x.id === id); if(window.state.money < item.price) return window.showAlert("お金不足", "", "💸");
+            if (item.type === 'cure') { if(r.state!=='sick') return window.showAlert("元気です","","🙅"); window.state.money-=item.price; r.state='normal'; window.showAlert("治療", "薬で治りました！", "💉", [{label:"戻る",onClick:()=>{window.switchView('room');renderRoom();}}]); }
+            else if (item.type === 'travel') { window.state.money-=item.price; r.state='traveling'; r.returnTime=window.state.hour+4; if(r.returnTime>=24)r.returnTime-=24; window.showAlert("出発！", `${r.name}が旅行へ！`, "✈️", [{label:"戻る",onClick:()=>{window.switchView('mansion');}}]); }
+            else if (item.type === 'ring') { if(!r.lover) return window.showAlert("相手がいません","","💔"); if(r.isMarried) return window.showAlert("既婚です","","💍"); window.state.money-=item.price; r.isMarried=true; const p=window.state.residents.find(x=>x.id===r.lover); if(p)p.isMarried=true; addToAlbum('結婚', `${r.name}が結婚！`, '💒'); window.showAlert("祝！", "永遠の愛を誓いました！", "💒", [{label:"戻る",onClick:()=>{window.switchView('room');renderRoom();}}]); }
+            else if (item.type === 'interior') { window.state.money-=item.price; r.interior=item.bg; trackCollection(id); window.showAlert("模様替え", "壁紙を替えました", "✨", [{label:"戻る",onClick:()=>{window.switchView('room');renderRoom();}}]); }
+            else if (item.type === 'gift') { if(r.items.includes(id)) return window.showAlert("持ってます","","⚠️"); window.state.money-=item.price; r.items.push(id); trackCollection(id); r.happiness=100; checkLevelUp(r); window.showAlert("プレゼント", `${item.name}を贈りました！`, "🎁", [{label:"戻る",onClick:()=>{window.switchView('room');renderRoom();}}]); }
+            else if (item.type === 'pet') { if(r.pet) return window.showAlert("飼ってます","","⚠️"); window.state.money-=item.price; r.pet = item.icon; trackCollection(id); window.showAlert("ペット", `${item.name}を飼い始めました！`, item.icon, [{label:"戻る",onClick:()=>{window.switchView('room');renderRoom();}}]); }
+            else if (item.type === 'tv') { if(r.tv) return window.showAlert("持ってます","","⚠️"); window.state.money-=item.price; r.tv = true; trackCollection(id); window.showAlert("家電", "テレビを設置しました！", "📺", [{label:"戻る",onClick:()=>{window.switchView('room');renderRoom();}}]); }
+            updateGlobalUI();
+        }
+        window.buyAcc = function(id) { const r=window.state.residents.find(x=>x.id===window.state.currentRoomId); if(!r) return window.showAlert("誰に？","","🤔"); if(window.state.money<100) return window.showAlert("お金不足","","💸"); window.state.money-=100; r.acc=id; trackCollection(id); updateGlobalUI(); window.showAlert("着せ替え", "装備しました！", "✨", [{label:"戻る",onClick:()=>{window.switchView('room');renderRoom();}}]); }
+
+        window.startQuiz = function(id) {
+            const r = window.state.residents.find(x=>x.id===id); const type = ['age','blood','personality','friends'][Math.floor(Math.random()*4)];
+            let q="", a="", c=[];
+            if(type==='age'){ q="年齢は？"; a=`${r.age}歳`; c=[a, `${r.age-2}歳`, `${r.age+5}歳`, `${Math.max(1,r.age-10)}歳`]; }
+            else if(type==='blood'){ q="血液型は？"; a=`${r.blood}型`; c=['A型','B型','O型','AB型']; }
+            else if(type==='personality'){ const m={normal:'ふつう',energetic:'熱血',cool:'クール',laidback:'のんびり'}; q="性格は？"; a=m[r.personality]; c=['ふつう','熱血','クール','のんびり']; }
+            else { q="友達は何人？"; a=`${r.friends.length}人`; c=[a, `${r.friends.length+1}人`, `${r.friends.length+2}人`, `0人`]; }
+            c=[...new Set(c)]; while(c.length<4) { c.push(Math.floor(Math.random()*100)+"人"); c=[...new Set(c)]; } c.sort(()=>Math.random()-0.5);
+            let html = `<h2 class="text-xl font-bold mb-4">${r.name} の${q}</h2><div class="grid grid-cols-1 gap-2">`;
+            c.forEach(btn => html += `<button onclick="ansQuiz('${btn===a}')" class="bg-indigo-100 py-3 rounded-xl font-bold">${btn}</button>`);
+            html += `</div>`; window.showAlert("クイズ！", "", "❓"); document.getElementById('alert-msg').innerHTML = html; document.getElementById('alert-actions').innerHTML = '';
+        }
+        window.ansQuiz = function(isCorrect) { window.closeAlert(); if(isCorrect==='true'){ window.state.money+=100; updateGlobalUI(); window.showAlert("大正解！", "賞金100Gゲット！", "🎉", [{label:"戻る",onClick:()=>window.switchView('room')}]); } else { window.showAlert("ブッブー！", "残念！", "❌", [{label:"戻る",onClick:()=>window.switchView('room')}]); } }
+
+        function renderAlbum() { const d=document.getElementById('album-content'); d.innerHTML=''; if(window.state.album.length===0){ d.innerHTML='<p class="text-center text-gray-400">思い出なし</p>'; return; } window.state.album.forEach(a=>{ d.innerHTML += `<div class="bg-gray-50 p-2 rounded-xl flex gap-3 shadow-sm items-center"><div class="text-2xl">${a.icon}</div><div><div class="text-[10px] text-gray-500">${a.time}</div><div class="font-bold text-sm text-indigo-700">${a.title}</div><div class="text-xs">${a.desc}</div></div></div>`; }); }
+        function renderCollection() {
+            const grid = document.getElementById('collection-grid'); grid.innerHTML = '';
+            const allItems = [...FOODS, ...ITEMS, ...ACCS];
+            allItems.forEach(i => {
+                const hasItem = window.state.collections.includes(i.id);
+                grid.innerHTML += `<div class="bg-gray-100 p-2 rounded-xl text-center shadow-sm ${hasItem?'':'opacity-50 grayscale'}"><div class="text-3xl">${hasItem?i.icon:'❓'}</div><div class="font-bold text-[10px] mt-1 truncate">${hasItem?i.name:'???'}</div></div>`;
+            });
+        }
+
+        window.renderPark = function() {
+            const area = document.getElementById('park-area'); area.innerHTML = '';
+            const avail = window.state.residents.filter(r => r.state === 'normal' && !r.isSleeping); if(avail.length === 0) return;
+            const selected = avail.sort(()=>Math.random()-0.5).slice(0, Math.min(avail.length, Math.floor(Math.random()*3)+2));
+            selected.forEach(r => {
+                let isPlaying = r.items.includes('i3') && Math.random()<0.5;
+                area.innerHTML += `<div class="relative flex flex-col items-center mx-1"><div class="relative text-6xl drop-shadow ${isPlaying?'animate-pulse':'char-bounce'} hover:scale-110 cursor-pointer" onclick="openRoom('${r.id}')">${r.acc?`<div class="accessory" style="font-size:0.5em;top:-20%;">${ACCS.find(a=>a.id===r.acc).icon}</div>`:''}${r.face}${isPlaying?`<div class="absolute bottom-0 -right-2 text-3xl animate-bounce">🎸</div>`:''}</div><div class="text-[9px] bg-white/70 px-2 rounded-full mt-1 font-bold">${r.name}</div></div>`;
+            });
+        }
+        window.searchTreasure = function() {
+            if(Math.random() < 0.3) {
+                let find = Math.floor(Math.random()*200)+50; window.state.money += find; updateGlobalUI();
+                window.showAlert("宝箱発見！", `公園の茂みから ${find}G 見つけた！`, "👑");
+            } else { window.showAlert("ハズレ…", "何も見つからなかった…", "🍂"); }
+        }
+
+        window.renderMap = function() {
+            const cnt=document.getElementById('map-container'), svg=document.getElementById('map-svg'), nDiv=document.getElementById('map-nodes'); svg.innerHTML=''; nDiv.innerHTML='';
+            if(window.state.residents.length===0) return;
+            const cx=cnt.clientWidth/2, cy=cnt.clientHeight/2, rad=Math.min(cx,cy)-30, nodes=[];
+            window.state.residents.forEach((r,i) => {
+                const a = (2*Math.PI/window.state.residents.length)*i - Math.PI/2, x = cx+rad*Math.cos(a), y = cy+rad*Math.sin(a); nodes.push({r,x,y});
+                const el = document.createElement('div'); el.className = "absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center cursor-pointer hover:scale-125 transition z-10 bg-white/50 p-1 rounded-full backdrop-blur shadow-sm"; el.style.left=`${x}px`; el.style.top=`${y}px`; el.onclick=()=>window.openRoom(r.id);
+                el.innerHTML = `<div class="relative text-3xl drop-shadow">${r.acc?`<div class="accessory" style="font-size:0.5em;top:-20%;">${ACCS.find(a=>a.id===r.acc).icon}</div>`:''}${r.face}</div><div class="text-[9px] font-bold mt-1 bg-white px-1 rounded shadow-sm border border-gray-200">${r.name}</div>`;
+                nDiv.appendChild(el);
+            });
+            const drawn = new Set();
+            nodes.forEach(n1 => { n1.r.friends.forEach(fid => {
+                const eid = [n1.r.id, fid].sort().join('-'); if(drawn.has(eid)) return; drawn.add(eid);
+                const n2 = nodes.find(n => n.r.id === fid); if(n2) {
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1',n1.x); line.setAttribute('y1',n1.y); line.setAttribute('x2',n2.x); line.setAttribute('y2',n2.y);
+                    if(n1.r.isMarried && n1.r.lover===n2.r.id) { line.setAttribute('stroke','#ef4444'); line.setAttribute('stroke-width','4'); }
+                    else if(n1.r.lover===n2.r.id) { line.setAttribute('stroke','#ec4899'); line.setAttribute('stroke-width','3'); line.setAttribute('class','line-flow'); }
+                    else { line.setAttribute('stroke','#3b82f6'); line.setAttribute('stroke-width','1.5'); line.setAttribute('stroke-opacity','0.5'); }
+                    svg.appendChild(line);
+                }
+            })});
+        }
+
+        window.drawFortune = function() {
+            const results = ["大吉：最高の1日！家賃収入が増えるかも？", "中吉：良い出会いがありそう。相関図をチェック！", "小吉：平穏な1日。公園でのんびりしよう。", "凶：風邪に注意！ショップで薬の準備を。"];
+            const p = results[Math.floor(Math.random()*results.length)];
+            const div = document.getElementById('fortune-result');
+            div.innerHTML = `<div class="animate-pulse">${p}</div>`;
+            if(Math.random()<0.2) { window.state.money += 50; updateGlobalUI(); div.innerHTML += `<br><span class="text-yellow-300 text-sm">おまけで 50G 拾った！</span>`; }
+        }
+
+    </script>
+</body>
+</html>
